@@ -51,15 +51,52 @@ def replace_in_paragraph(paragraph, find_text, replace_text):
             return True
 
     # Case 2: Multi-run — find_text crosses run boundaries.
-    # Rebuild the whole paragraph, do the replacement, assign to first run.
+    # Preserve run structure: put replacement into the first affected run,
+    # keep prefix/suffix text in place, clear only the fully-replaced middle runs.
     full_text = paragraph.text
     if find_text not in full_text:
         return False
 
-    new_full_text = full_text.replace(find_text, replace_text, 1)
-    runs[0].text = new_full_text
-    for run in runs[1:]:
-        run.text = ""
+    start_pos = full_text.find(find_text)
+    end_pos = start_pos + len(find_text)
+
+    # Locate which runs overlap with the [start_pos, end_pos) range
+    char_pos = 0
+    first_affected = None
+    last_affected = None
+    affected = set()
+
+    for ri, run in enumerate(runs):
+        run_start = char_pos
+        run_end = char_pos + len(run.text)
+        if run_start < end_pos and run_end > start_pos:
+            affected.add(ri)
+            if first_affected is None:
+                first_affected = ri
+            last_affected = ri
+        char_pos = run_end
+
+    if first_affected is None:
+        return False
+
+    # Save suffix from the last affected run (text after find_text)
+    suffix = ""
+    if last_affected > first_affected:
+        last_run_start = sum(len(runs[i].text) for i in range(last_affected))
+        offset_in_last = end_pos - last_run_start
+        if offset_in_last < len(runs[last_affected].text):
+            suffix = runs[last_affected].text[offset_in_last:]
+
+    # Rebuild the first affected run: prefix + replacement + suffix
+    first_run_start = sum(len(runs[i].text) for i in range(first_affected))
+    offset_in_first = start_pos - first_run_start
+    prefix = runs[first_affected].text[:offset_in_first]
+    runs[first_affected].text = prefix + replace_text + suffix
+
+    # Clear all other affected runs
+    for ri in affected:
+        if ri != first_affected:
+            runs[ri].text = ""
     return True
 
 
